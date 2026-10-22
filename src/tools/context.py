@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Any, Callable, Dict, List
 import logging
 
+from src.tools.confirmation_guard import appointment_mutation_block_response
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,6 +80,7 @@ class ToolExecutionContext:
     
     # Request metadata
     user_input: Optional[str] = None  # Original user utterance
+    prior_conversation_history: Optional[List[Dict[str, Any]]] = None
     detected_intent: Optional[str] = None
     confidence: Optional[float] = None
 
@@ -137,7 +140,11 @@ class ToolExecutionContext:
         await self.session_store.upsert_call(session)
         logger.debug(f"Updated session {self.call_id}: {kwargs}")
 
-    async def get_tool_block_response(self, tool_name: Optional[str]) -> Optional[Dict[str, Any]]:
+    async def get_tool_block_response(
+        self,
+        tool_name: Optional[str],
+        parameters: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
         """
         Return a standardized error result when call lifecycle state should block
         tool execution for the active call.
@@ -151,7 +158,43 @@ class ToolExecutionContext:
                 tool_name,
                 exc_info=True,
             )
+            if appointment_mutation_block_response(
+                tool_name,
+                parameters,
+                user_input=self.user_input,
+                conversation_history=self.prior_conversation_history or [],
+            ) is not None:
+                return {
+                    "status": "blocked",
+                    "code": "explicit_appointment_confirmation_required",
+                    "reason": "confirmation_state_unavailable",
+                    "message": (
+                        "No appointment action was performed because caller confirmation "
+                        "could not be verified. Read back the exact appointment details "
+                        "and ask for confirmation in a new turn."
+                    ),
+                }
             return None
+
+        confirmation_block = appointment_mutation_block_response(
+            tool_name,
+            parameters,
+            user_input=self.user_input,
+            conversation_history=(
+                self.prior_conversation_history
+                if self.prior_conversation_history is not None
+                else (getattr(session, "conversation_history", None) or [])
+            ),
+        )
+        if confirmation_block:
+            logger.warning(
+                "Blocking appointment mutation without verified caller confirmation for call_id=%s tool=%s provider=%s reason=%s",
+                self.call_id,
+                tool_name,
+                self.provider_name,
+                confirmation_block.get("reason"),
+            )
+            return confirmation_block
 
         no_input_state = getattr(session, "no_input_state", None) or {}
         if isinstance(no_input_state, dict) and bool(no_input_state.get("announcement_active", False)):

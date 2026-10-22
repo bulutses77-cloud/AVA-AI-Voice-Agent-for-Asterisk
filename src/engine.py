@@ -17680,7 +17680,11 @@ class Engine:
                             ari_client=self.ari_client,
                             config=self._tool_config_for_session(session),
                             tool_registry=tool_registry,
-                            provider_name="pipeline"
+                            provider_name="pipeline",
+                            user_input=transcript_text,
+                            prior_conversation_history=list(
+                                (context_for_llm or {}).get("prior_messages") or []
+                            ),
                         )
 
                         for tool_call in tool_calls:
@@ -17695,12 +17699,23 @@ class Engine:
                                 tool = tool_registry.get(name)
                                 
                                 if tool:
-                                    logger.info("Executing pipeline tool", tool=name, call_id=call_id)
+                                    blocked_result = await tool_ctx.get_tool_block_response(name, args)
+                                    if blocked_result:
+                                        logger.warning(
+                                            "Pipeline tool blocked by execution guard",
+                                            tool=name,
+                                            call_id=call_id,
+                                            reason=blocked_result.get("reason"),
+                                        )
+                                        result = blocked_result
+                                    else:
+                                        logger.info("Executing pipeline tool", tool=name, call_id=call_id)
                                     # Slow-response UX (pipeline only): speak a waiting message if the tool takes too long.
                                     slow_threshold_ms = int(getattr(tool, "slow_response_threshold_ms", 0) or 0)
                                     slow_message = str(getattr(tool, "slow_response_message", "") or "").strip()
-                                    tool_task = asyncio.create_task(tool.execute(args, tool_ctx))
-                                    if slow_threshold_ms > 0 and slow_message:
+                                    if not blocked_result:
+                                        tool_task = asyncio.create_task(tool.execute(args, tool_ctx))
+                                    if tool_task is not None and slow_threshold_ms > 0 and slow_message:
                                         done, _pending = await asyncio.wait(
                                             {tool_task},
                                             timeout=float(slow_threshold_ms) / 1000.0,
@@ -17721,7 +17736,8 @@ class Engine:
                                                         )
                                             except Exception:
                                                 logger.debug("Failed to speak slow-response message", call_id=call_id, exc_info=True)
-                                    result = await tool_task
+                                    if tool_task is not None:
+                                        result = await tool_task
                                     tool_duration_ms = (time.time() - _tool_start) * 1000
                                     logger.info("Tool execution result", tool=name, result=result)
 
@@ -17950,13 +17966,27 @@ class Engine:
                                                             continue
                                                         next_tool = tool_registry.get(next_name)
                                                         if next_tool:
-                                                            logger.info("Executing follow-up tool", tool=next_name, call_id=call_id)
                                                             next_tool_start = time.time()
                                                             slow_threshold_ms = int(getattr(next_tool, "slow_response_threshold_ms", 0) or 0)
                                                             slow_message = str(getattr(next_tool, "slow_response_message", "") or "").strip()
-                                                            next_task = asyncio.create_task(next_tool.execute(next_args, tool_ctx))
+                                                            next_blocked_result = await tool_ctx.get_tool_block_response(
+                                                                next_name,
+                                                                next_args,
+                                                            )
+                                                            next_task = None
+                                                            if next_blocked_result:
+                                                                logger.warning(
+                                                                    "Follow-up pipeline tool blocked by execution guard",
+                                                                    tool=next_name,
+                                                                    call_id=call_id,
+                                                                    reason=next_blocked_result.get("reason"),
+                                                                )
+                                                                next_result = next_blocked_result
+                                                            else:
+                                                                logger.info("Executing follow-up tool", tool=next_name, call_id=call_id)
+                                                                next_task = asyncio.create_task(next_tool.execute(next_args, tool_ctx))
                                                             try:
-                                                                if slow_threshold_ms > 0 and slow_message:
+                                                                if next_task is not None and slow_threshold_ms > 0 and slow_message:
                                                                     done, _pending = await asyncio.wait(
                                                                         {next_task},
                                                                         timeout=float(slow_threshold_ms) / 1000.0,
@@ -17977,9 +18007,10 @@ class Engine:
                                                                                     )
                                                                         except Exception:
                                                                             logger.debug("Failed to speak slow-response message", call_id=call_id, exc_info=True)
-                                                                next_result = await next_task
+                                                                if next_task is not None:
+                                                                    next_result = await next_task
                                                             except asyncio.CancelledError:
-                                                                if not next_task.done():
+                                                                if next_task is not None and not next_task.done():
                                                                     next_task.cancel()
                                                                     with contextlib.suppress(asyncio.CancelledError):
                                                                         await next_task
@@ -21658,7 +21689,7 @@ class Engine:
                 )
 
                 # Execute through the registry captured by this call's generation.
-                blocked_result = await context.get_tool_block_response(function_name)
+                blocked_result = await context.get_tool_block_response(function_name, parameters)
                 tool = None if blocked_result else (tool_registry.get(function_name) if tool_registry else None)
                 if blocked_result:
                     result = blocked_result

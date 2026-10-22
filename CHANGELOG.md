@@ -41,6 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Appointment confirmation safety:** appointment create, reschedule, update,
+  cancel, and delete tools that use `patient_confirmed` now verify the actual
+  caller dialog before execution. Identity confirmation can no longer authorize
+  an appointment write; the agent must first read back concrete schedule details,
+  ask for confirmation, and receive an affirmative answer in a separate turn.
+  Natural Turkish confirmations such as “tamam” and “olur” remain accepted after
+  a valid readback, while denials, changes, and ambiguous replies fail closed.
+
 - **Turkish caller farewell recognition:** recognize common Turkish direct hangup
   requests and short, natural closings (including gratitude, well-wishes and
   goodbyes) while rejecting longer utterances that continue the conversation.

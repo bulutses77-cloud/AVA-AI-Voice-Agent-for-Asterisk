@@ -163,7 +163,7 @@ class DeepgramToolAdapter:
             user_input=context.get('user_input')
         )
 
-        block_result = await exec_context.get_tool_block_response(function_name)
+        block_result = await exec_context.get_tool_block_response(function_name, parameters)
         if block_result:
             block_result['function_call_id'] = function_call_id
             block_result['function_name'] = function_name

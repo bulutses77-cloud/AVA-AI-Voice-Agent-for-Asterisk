@@ -2426,7 +2426,7 @@ class GoogleLiveProvider(AIProviderInterface):
                     provider_name=self.provider_event_name(),
                 )
 
-                block_result = await tool_context.get_tool_block_response(func_name)
+                block_result = await tool_context.get_tool_block_response(func_name, func_args)
                 if block_result:
                     result = block_result
                 elif not self._allowed_tools or not self._tool_adapter.registry.is_tool_allowed(func_name, self._allowed_tools):

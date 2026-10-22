@@ -613,6 +613,22 @@ tools:
 
 Unlike pre-call tools (automatic, before AI speaks) and post-call webhooks (after hangup), in-call HTTP tools are invoked by the AI during the conversation when it needs fresh data. The AI decides when to call them based on conversation context.
 
+### Appointment mutation confirmation guard
+
+In-call HTTP tools whose names describe an appointment mutation (`create`,
+`book`, `schedule`, `reschedule`, `update`, `cancel`, or `delete`) and whose
+arguments include `patient_confirmed` are protected by a dialog-level guard.
+Setting that argument to `yes` is not sufficient on its own. Immediately before
+execution, the engine verifies that the assistant read back concrete scheduling
+details and asked for confirmation, and that the caller then gave an affirmative
+answer in a separate turn. A reply to an identity question is never transaction
+confirmation. Missing history, denials, changed details, and ambiguous replies
+fail closed without sending the HTTP request.
+
+Turkish callers may confirm naturally after a valid readback, including “evet”,
+“tamam”, “olur”, “uygundur”, and “onaylıyorum”. Availability and lookup tools are
+not affected.
+
 **Use Cases**:
 - Check appointment availability
 - Look up order status  

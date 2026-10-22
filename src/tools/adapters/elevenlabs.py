@@ -165,7 +165,7 @@ class ElevenLabsToolAdapter:
                 )
 
             if isinstance(exec_context, ToolExecutionContext):
-                block_result = await exec_context.get_tool_block_response(tool_name)
+                block_result = await exec_context.get_tool_block_response(tool_name, parameters)
                 if block_result:
                     return {
                         "success": False,
