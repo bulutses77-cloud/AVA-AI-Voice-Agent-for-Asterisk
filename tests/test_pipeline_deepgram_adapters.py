@@ -1,5 +1,6 @@
 import asyncio
 import json
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -134,6 +135,73 @@ async def test_streaming_url_uses_authoritative_engine_audio_format(monkeypatch)
     assert "encoding=linear16" in captured["url"]
     assert "sample_rate=16000" in captured["url"]
     await adapter.close_call("call-stream")
+
+
+@pytest.mark.asyncio
+async def test_streaming_nova3_repeats_clean_keyterms(monkeypatch):
+    config = _build_app_config()
+    provider_config = DeepgramProviderConfig(
+        **{
+            **config.providers["deepgram"],
+            "model": "nova-3",
+            "stt_language": "tr-TR",
+            "keyterms": ["Alim Hoca", "Sefa Hoca", "alim hoca", "  ", "Ballıpınar"],
+        }
+    )
+    adapter = DeepgramSTTAdapter(
+        "deepgram_stt",
+        config,
+        provider_config,
+        session_factory=lambda: _FakeHttpSession({}),
+    )
+    await adapter.open_call("call-keyterms", {})
+
+    captured = {}
+
+    async def fake_connect(url, **kwargs):
+        captured["url"] = url
+        return _MockWebSocket()
+
+    monkeypatch.setattr(deepgram_module.websockets, "connect", fake_connect)
+    await adapter.start_stream(
+        "call-keyterms", {}, sample_rate_hz=16000, fmt="pcm16_16k"
+    )
+
+    query = parse_qs(urlparse(captured["url"]).query)
+    assert query["model"] == ["nova-3"]
+    assert query["language"] == ["tr-TR"]
+    assert query["keyterm"] == ["Alim Hoca", "Sefa Hoca", "Ballıpınar"]
+    await adapter.close_call("call-keyterms")
+
+
+@pytest.mark.asyncio
+async def test_streaming_non_nova3_does_not_send_keyterms(monkeypatch):
+    config = _build_app_config()
+    provider_config = DeepgramProviderConfig(
+        **{**config.providers["deepgram"], "keyterms": ["Alim Hoca"]}
+    )
+    adapter = DeepgramSTTAdapter(
+        "deepgram_stt",
+        config,
+        provider_config,
+        session_factory=lambda: _FakeHttpSession({}),
+    )
+    await adapter.open_call("call-no-keyterms", {})
+
+    captured = {}
+
+    async def fake_connect(url, **kwargs):
+        captured["url"] = url
+        return _MockWebSocket()
+
+    monkeypatch.setattr(deepgram_module.websockets, "connect", fake_connect)
+    await adapter.start_stream(
+        "call-no-keyterms", {}, sample_rate_hz=16000, fmt="pcm16_16k"
+    )
+
+    query = parse_qs(urlparse(captured["url"]).query)
+    assert "keyterm" not in query
+    await adapter.close_call("call-no-keyterms")
 
 
 class _FakeResponse:

@@ -77,6 +77,34 @@ def _bytes_per_sample(encoding: str) -> int:
     return 2
 
 
+def _normalize_nova3_keyterms(model: Any, value: Any) -> list[str]:
+    """Return clean Deepgram Nova-3 keyterms for repeated query parameters.
+
+    Deepgram's Nova-3 API expects one ``keyterm`` query parameter per phrase.
+    The legacy ``keywords`` syntax and comma-separated values are accepted by
+    the endpoint but do not bias Nova-3 as intended.  Keep this adapter strict
+    so an operator-provided vocabulary cannot silently become one unusable
+    literal phrase.
+    """
+    if not str(model or "").strip().lower().startswith("nova-3"):
+        return []
+    if not isinstance(value, (list, tuple)):
+        return []
+
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in value:
+        term = str(raw or "").strip()
+        folded = term.casefold()
+        if not term or folded in seen:
+            continue
+        cleaned.append(term)
+        seen.add(folded)
+        if len(cleaned) >= 100:
+            break
+    return cleaned
+
+
 # Deepgram STT Adapter ------------------------------------------------------------
 
 
@@ -238,13 +266,22 @@ class DeepgramSTTAdapter(STTComponent):
             "smart_format": str(merged.get("smart_format", True)).lower(),
         }
         query_params = {k: v for k, v in query_params.items() if v}
+        keyterms = _normalize_nova3_keyterms(
+            merged.get("model"), merged.get("keyterms")
+        )
 
         # Build REST URL
         base_url = _normalize_stt_url(merged.get("base_url"))
         parsed = urlparse(base_url)
-        existing = dict(parse_qsl(parsed.query))
-        existing.update({k: str(v) for k, v in query_params.items()})
-        rest_url = urlunparse(parsed._replace(query=urlencode(existing)))
+        replaced_keys = set(query_params) | {"keyterm"}
+        query_items = [
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if key not in replaced_keys
+        ]
+        query_items.extend((key, str(value)) for key, value in query_params.items())
+        query_items.extend(("keyterm", term) for term in keyterms)
+        rest_url = urlunparse(parsed._replace(query=urlencode(query_items)))
 
         # Determine Content-Type based on encoding
         if api_encoding in ("mulaw", "g711_ulaw", "mu-law"):
@@ -328,6 +365,7 @@ class DeepgramSTTAdapter(STTComponent):
             "encoding": runtime_options.get("encoding", self._pipeline_defaults.get("encoding", self._provider_defaults.input_encoding)),
             "sample_rate": runtime_options.get("sample_rate", self._pipeline_defaults.get("sample_rate", self._provider_defaults.input_sample_rate_hz)),
             "smart_format": runtime_options.get("smart_format", self._pipeline_defaults.get("smart_format", True)),
+            "keyterms": runtime_options.get("keyterms", self._pipeline_defaults.get("keyterms", self._provider_defaults.keyterms)),
             "api_key": runtime_options.get("api_key", self._pipeline_defaults.get("api_key", self._provider_defaults.api_key)),
         }
         if runtime_options.get("response_timeout_sec") is not None:
@@ -421,9 +459,20 @@ class DeepgramSTTAdapter(STTComponent):
             "sample_rate": str(sample_rate_hz),
             "channels": "1",
         }
-        existing = dict(parse_qsl(parsed.query))
-        existing.update(query_params)
-        ws_url = urlunparse(parsed._replace(path=path, query=urlencode(existing)))
+        keyterms = _normalize_nova3_keyterms(
+            query_params["model"], merged.get("keyterms")
+        )
+        replaced_keys = set(query_params) | {"keyterm"}
+        query_items = [
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if key not in replaced_keys
+        ]
+        query_items.extend((key, str(value)) for key, value in query_params.items())
+        query_items.extend(("keyterm", term) for term in keyterms)
+        ws_url = urlunparse(
+            parsed._replace(path=path, query=urlencode(query_items))
+        )
 
         logger.info(
             "Deepgram STT opening streaming session",
@@ -470,6 +519,7 @@ class DeepgramSTTAdapter(STTComponent):
             model=merged.get("model"),
             encoding="linear16",
             sample_rate_hz=sample_rate_hz,
+            keyterms_count=len(keyterms),
         )
 
     async def send_audio(
