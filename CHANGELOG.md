@@ -41,6 +41,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Turkish caller farewell recognition:** recognize common Turkish direct hangup
+  requests and short, natural closings (including gratitude, well-wishes and
+  goodbyes) while rejecting longer utterances that continue the conversation.
+
+- **Pipeline barge-in recovery:** keep the dialog worker alive when a caller
+  interrupts a tool-result continuation while its streaming audio is draining.
+  Concurrent playback cancellation is now reported as an interrupted response
+  instead of propagating `CancelledError` and silently discarding every later
+  STT transcript in the same call.
+
 - **Telnyx and MiniMax tool calls:** keep a tool call whose `arguments` is an
   empty string, null or an object. A parameterless call such as `hangup_call`
   used to fail `json.loads("")` and be dropped with only a warning.

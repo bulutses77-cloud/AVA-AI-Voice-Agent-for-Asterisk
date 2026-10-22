@@ -3895,6 +3895,21 @@ class StreamingPlaybackManager:
                     except (asyncio.TimeoutError, TypeError, ValueError):
                         logger.warning("Streaming drain timed out; aborting playback", call_id=call_id, stream_id=stream_id)
                     except asyncio.CancelledError:
+                        # A concurrent barge-in owns playback teardown and
+                        # cancels this stream task while a producer is waiting
+                        # for a natural drain. That cancellation belongs to the
+                        # stream, not to the dialog worker awaiting this method.
+                        # Preserve genuine caller-task cancellation.
+                        if task.cancelled() and (
+                            stream_info.get('stop_requested')
+                            or not self.is_stream_active(call_id, stream_id)
+                        ):
+                            logger.info(
+                                "Streaming drain interrupted by concurrent stop",
+                                call_id=call_id,
+                                stream_id=stream_id,
+                            )
+                            return False
                         raise
                     except Exception:
                         logger.debug("Streaming drain failed; aborting playback", call_id=call_id, stream_id=stream_id, exc_info=True)

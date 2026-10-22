@@ -358,6 +358,60 @@ async def test_stop_owns_cleanup_when_blocked_producer_is_cancelled():
     assert jitter_buffer.empty()
     assert call_id not in mgr.active_streams
 
+
+@pytest.mark.asyncio
+async def test_drain_cancelled_by_concurrent_barge_in_does_not_cancel_waiter():
+    mgr = make_manager()
+    call_id = "test-call-concurrent-drain-stop"
+    stream_id = "stream:resp:test-call-concurrent-drain-stop:1"
+    playback_task = asyncio.create_task(asyncio.Event().wait())
+    stream_info = {
+        "stream_id": stream_id,
+        "streaming_task": playback_task,
+        "pacer_task": None,
+        "keepalive_task": None,
+        "end_reason": "",
+    }
+    mgr.active_streams[call_id] = stream_info
+
+    drain_waiter = asyncio.create_task(
+        mgr.stop_streaming_playback(call_id, drain=True)
+    )
+    await asyncio.sleep(0)
+    stream_info["stop_requested"] = True
+    playback_task.cancel()
+
+    assert await asyncio.wait_for(drain_waiter, timeout=0.2) is False
+    assert not drain_waiter.cancelled()
+
+
+@pytest.mark.asyncio
+async def test_drain_waiter_preserves_its_own_cancellation():
+    mgr = make_manager()
+    call_id = "test-call-drain-waiter-cancelled"
+    stream_id = "stream:resp:test-call-drain-waiter-cancelled:1"
+    playback_task = asyncio.create_task(asyncio.Event().wait())
+    mgr.active_streams[call_id] = {
+        "stream_id": stream_id,
+        "streaming_task": playback_task,
+        "pacer_task": None,
+        "keepalive_task": None,
+        "end_reason": "",
+    }
+
+    drain_waiter = asyncio.create_task(
+        mgr.stop_streaming_playback(call_id, drain=True)
+    )
+    await asyncio.sleep(0)
+    drain_waiter.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await drain_waiter
+    playback_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await playback_task
+
+
 def test_low_water_expiry_resets_when_a_full_frame_arrives():
     mgr = make_manager(provider_grace_ms=200)
     call_id = "test-call-resumed-audio"

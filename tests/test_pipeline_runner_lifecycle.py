@@ -320,6 +320,13 @@ class _PCM16TTS:
         yield b"pcm16-b"
 
 
+class _InterruptedDrainStreamingStub(_DrainingStreamingStub):
+    async def stop_streaming_playback(self, call_id, *, drain=False):
+        assert call_id == "call-tool"
+        self.active = False
+        return False
+
+
 @pytest.mark.asyncio
 async def test_pipeline_stream_put_exits_when_barge_in_stops_full_queue():
     engine = Engine.__new__(Engine)
@@ -397,6 +404,25 @@ async def test_pipeline_tool_continuation_uses_negotiated_stream_and_drains():
     )
     assert manager.drained == [b"pcm16-a", b"pcm16-b"]
     assert engine._pipeline_tts_uses_streaming(pipeline) is True
+
+
+@pytest.mark.asyncio
+async def test_pipeline_tool_continuation_reports_barge_in_during_drain():
+    engine = Engine.__new__(Engine)
+    engine.config = SimpleNamespace(downstream_mode="stream")
+    engine.streaming_playback_manager = _InterruptedDrainStreamingStub()
+    pipeline = SimpleNamespace(
+        tts_adapter=_PCM16TTS(),
+        tts_options={"format": {"encoding": "linear16", "sample_rate_hz": 16000}},
+    )
+
+    with pytest.raises(_PipelinePlaybackInterrupted):
+        await engine._stream_pipeline_tts_text(
+            "call-tool",
+            SimpleNamespace(),
+            pipeline,
+            "Available slots",
+        )
 
 
 def test_pipeline_terminal_fallback_matches_first_live_farewell():

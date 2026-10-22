@@ -33,6 +33,18 @@ DEFAULT_HANGUP_MARKERS: Dict[str, List[str]] = {
         "have a great day",
         "take care",
         "talk to you later",
+        "telefonu kapat",
+        "telefonu kapatın",
+        "telefonu kapatabilirsin",
+        "telefonu kapatabilirsiniz",
+        "aramayı bitir",
+        "aramayı bitirin",
+        "görüşmeyi bitir",
+        "görüşmeyi bitirin",
+        "hoşça kal",
+        "hoşça kalın",
+        "hoşçakal",
+        "hoşçakalın",
     ],
     "assistant_farewell": [
         "goodbye",
@@ -41,6 +53,16 @@ DEFAULT_HANGUP_MARKERS: Dict[str, List[str]] = {
         "thank you for calling",
         "have a great day",
         "take care",
+        "iyi günler dilerim",
+        "iyi akşamlar dilerim",
+        "hoşça kalın",
+        "hoşçakalın",
+        "görüşürüz",
+        "görüşmek üzere",
+        "kendinize iyi bakın",
+        "iyi çalışmalar",
+        "kolay gelsin",
+        "bizi aradığınız için teşekkür ederim",
     ],
     "affirmative": [
         "yes",
@@ -92,7 +114,9 @@ _END_CALL_FUZZY_PATTERNS: List[tuple[str, str]] = [
 
 
 def _normalize_text(value: str) -> str:
-    return " ".join((value or "").strip().lower().split())
+    normalized = (value or "").strip().casefold().replace("\u0307", "")
+
+    return " ".join(normalized.split())
 
 
 def _normalize_end_call_text(value: str) -> str:
@@ -348,15 +372,38 @@ def text_is_short_polite_closing(text: str) -> bool:
     normalized = _normalize_end_call_text(text)
     if not normalized:
         return False
-    compact = _normalize_text(re.sub(r"[^a-z0-9\s]", " ", normalized))
+    compact = _normalize_text(re.sub(r"[^\w\s]", " ", normalized, flags=re.UNICODE))
     if not compact:
         return False
     if len(compact.split()) > 8:
         return False
-    return bool(
+    english_closing = bool(
         re.fullmatch(
             r"(?:(?:ok(?:ay)?|no(?:pe)?(?!\s+(?:thank\s+you|thanks)\b)|never\s+mind|nevermind|leave\s+it|that\s+s\s+(?:all|it)|thats\s+(?:all|it)|nothing\s+else)\s+)*"
             r"(?:thank\s+you|thanks)(?:\s+(?:so\s+much|very\s+much))?(?:\s+(?:bye|goodbye))?",
+            compact,
+        )
+    )
+    if english_closing:
+        return True
+
+    turkish_closing = (
+        r"(?:(?:çok\s+)?teşekkür(?:ler|\s+ederim)?|"
+        r"sağ\s*ol(?:un|asın)?|"
+        r"iyi\s+(?:günler|akşamlar|geceler|çalışmalar)|"
+        r"hoşça\s*kal(?:ın)?|"
+        r"(?:sonra\s+|tekrar\s+)?görüşürüz|görüşmek\s+üzere|"
+        r"kend(?:ine|inize)\s+iyi\s+bak(?:ın)?|kolay\s+gelsin|"
+        r"allah(?:\s+a)?\s+emanet\s+ol(?:un)?|eyvallah|bay\s+bay)"
+    )
+    return bool(
+        re.fullmatch(
+            r"(?:(?:tamam(?:dır)?|peki|oldu|hayır|yok|şimdilik|"
+            r"başka\s+bir\s+şey\s+yok|bu\s+kadar)\s+)*"
+            + turkish_closing
+            + r"(?:\s+"
+            + turkish_closing
+            + r")*",
             compact,
         )
     )

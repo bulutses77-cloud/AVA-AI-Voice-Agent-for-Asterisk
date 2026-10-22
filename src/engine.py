@@ -8655,9 +8655,13 @@ class Engine:
             await self._put_pipeline_stream_chunk(
                 call_id, stream_id, stream_queue, None
             )
-            await self.streaming_playback_manager.stop_streaming_playback(
+            drained = await self.streaming_playback_manager.stop_streaming_playback(
                 call_id, drain=True
             )
+            if not drained:
+                raise _PipelinePlaybackInterrupted(
+                    f"pipeline stream {stream_id} was interrupted before drain completed"
+                )
             logger.info(
                 "Pipeline tool continuation streaming completed",
                 call_id=call_id,

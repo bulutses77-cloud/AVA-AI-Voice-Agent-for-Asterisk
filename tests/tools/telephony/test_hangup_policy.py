@@ -79,6 +79,8 @@ def test_default_end_call_markers_include_natural_closing_phrases():
     assert "thank you" in markers
     assert "thanks" in markers
     assert "have a good day" in markers
+    assert "telefonu kapat" in markers
+    assert "hoşça kalın" in markers
 
 
 def test_end_call_detection_matches_polite_goodbye_phrase():
@@ -101,6 +103,10 @@ def test_end_call_detection_handles_common_stt_misrecognitions():
 
     assert text_contains_end_call_intent("Okay, hand up the call.", markers)
     assert text_contains_end_call_intent("Please and the call now.", markers)
+    assert text_contains_end_call_intent("Telefonu kapat.", markers)
+    assert text_contains_end_call_intent("Telefonu kapatabilirsiniz.", markers)
+    assert text_contains_end_call_intent("Aramayı bitirin lütfen.", markers)
+    assert text_contains_end_call_intent("Hoşça kalın.", markers)
 
 
 def test_short_polite_closing_detection_accepts_terminal_thanks():
@@ -108,6 +114,16 @@ def test_short_polite_closing_detection_accepts_terminal_thanks():
     assert text_is_short_polite_closing("thanks goodbye")
     assert text_is_short_polite_closing("No. Leave it. Thank you.")
     assert text_is_short_polite_closing("That's all, thank you")
+    assert text_is_short_polite_closing("Hayır, sağ ol")
+    assert text_is_short_polite_closing("Teşekkür ederim, sağ olasın")
+    assert text_is_short_polite_closing("İyi günler")
+    assert text_is_short_polite_closing("Hoşçakalın")
+    assert text_is_short_polite_closing("Tamamdır, çok teşekkür ederim, iyi günler")
+    assert text_is_short_polite_closing("Görüşmek üzere")
+    assert text_is_short_polite_closing("Kendinize iyi bakın")
+    assert text_is_short_polite_closing("Kolay gelsin")
+    assert text_is_short_polite_closing("Allah'a emanet olun")
+    assert text_is_short_polite_closing("Bay bay")
 
 
 def test_short_polite_closing_detection_rejects_long_mid_call_phrases():
@@ -115,3 +131,8 @@ def test_short_polite_closing_detection_rejects_long_mid_call_phrases():
     assert not text_is_short_polite_closing("No thank you, but please tell me about pricing")
     assert not text_is_short_polite_closing("No, thank you")
     assert not text_is_short_polite_closing("No thanks")
+    assert not text_is_short_polite_closing("Teşekkürler ama randevu saatini de söyler misiniz")
+    assert not text_is_short_polite_closing("Sağ olun, bir de doktorları sayar mısınız")
+    assert not text_is_short_polite_closing("İyi günler için erken randevu istiyorum")
+    assert not text_is_short_polite_closing("Yarın görüşürüz mü")
+    assert not text_is_short_polite_closing("Kolay gelsin diye aramadım, randevu istiyorum")
